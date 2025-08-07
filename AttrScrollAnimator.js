@@ -146,6 +146,85 @@ class AttrScrollAnimator {
         return this.positionObservers.get(position);
     }
 
+    parseStaggerDelay(value) {
+        if (!value) return 0;
+        
+        if (value.endsWith('ms')) {
+            return parseFloat(value);
+        } else if (value.endsWith('s')) {
+            return parseFloat(value) * 1000;
+        }
+        
+        return parseFloat(value);
+    }
+
+    animateChildren(parent, animateIn) {
+        const animationClass = parent.getAttribute('data-scroll-animation-class');
+        const childrenAttr = parent.getAttribute('data-scroll-children');
+        
+        let elements;
+        
+        if (childrenAttr && childrenAttr !== 'true') {
+            elements = Array.from(parent.querySelectorAll(`.${childrenAttr}`)).filter(el => 
+                !el.classList.contains('scroll-animation-trigger-line') && 
+                !el.classList.contains('scroll-animation-debug')
+            );
+        } else {
+            elements = Array.from(parent.children).filter(child => 
+                !child.classList.contains('scroll-animation-trigger-line') && 
+                !child.classList.contains('scroll-animation-debug')
+            );
+        }
+        
+        if (this.childrenAnimations.has(parent)) {
+            this.childrenAnimations.get(parent).forEach(timeout => clearTimeout(timeout));
+        }
+        
+        const reverseAttr = parent.getAttribute('data-scroll-animation-reverse');
+        const hasReverseClass = reverseAttr && reverseAttr !== 'true';
+        const reverseClass = hasReverseClass ? reverseAttr : null;
+        
+        const staggerAttr = parent.getAttribute('data-scroll-children-stagger');
+        const staggerDelay = staggerAttr ? this.parseStaggerDelay(staggerAttr) : 0;
+        
+        const timeouts = [];
+        
+        elements.forEach((element, index) => {
+            if (!staggerAttr) {
+                if (animateIn) {
+                    element.classList.add(animationClass);
+                    if (reverseClass) element.classList.remove(reverseClass);
+                } else if (reverseAttr) {
+                    element.classList.remove(animationClass);
+                    if (reverseClass) element.classList.add(reverseClass);
+                }
+                return;
+            }
+            
+            const delay = index * staggerDelay;
+            
+            const timeout = setTimeout(() => {
+                if (animateIn) {
+                    element.classList.add(animationClass);
+                    if (reverseClass) {
+                        element.classList.remove(reverseClass);
+                    }
+                } else if (reverseAttr) {
+                    element.classList.remove(animationClass);
+                    if (reverseClass) {
+                        element.classList.add(reverseClass);
+                    }
+                }
+            }, delay);
+            
+            timeouts.push(timeout);
+        });
+        
+        if (timeouts.length > 0) {
+            this.childrenAnimations.set(parent, timeouts);
+        }
+    }
+
     handleIntersection(entries) {
         entries.forEach(entry => {
             const element = entry.target;
@@ -258,85 +337,6 @@ class AttrScrollAnimator {
     refresh() {
         this.destroy();
         this.init();
-    }
-
-    parseStaggerDelay(value) {
-        if (!value) return 0;
-        
-        if (value.endsWith('ms')) {
-            return parseFloat(value);
-        } else if (value.endsWith('s')) {
-            return parseFloat(value) * 1000;
-        }
-        
-        return parseFloat(value);
-    }
-    
-    animateChildren(parent, animateIn) {
-        const animationClass = parent.getAttribute('data-scroll-animation-class');
-        const childrenAttr = parent.getAttribute('data-scroll-children');
-        
-        let elements;
-        
-        if (childrenAttr && childrenAttr !== 'true') {
-            elements = Array.from(parent.querySelectorAll(`.${childrenAttr}`)).filter(el => 
-                !el.classList.contains('scroll-animation-trigger-line') && 
-                !el.classList.contains('scroll-animation-debug')
-            );
-        } else {
-            elements = Array.from(parent.children).filter(child => 
-                !child.classList.contains('scroll-animation-trigger-line') && 
-                !child.classList.contains('scroll-animation-debug')
-            );
-        }
-        
-        if (this.childrenAnimations.has(parent)) {
-            this.childrenAnimations.get(parent).forEach(timeout => clearTimeout(timeout));
-        }
-        
-        const reverseAttr = parent.getAttribute('data-scroll-animation-reverse');
-        const hasReverseClass = reverseAttr && reverseAttr !== 'true';
-        const reverseClass = hasReverseClass ? reverseAttr : null;
-        
-        const staggerAttr = parent.getAttribute('data-scroll-children-stagger');
-        const staggerDelay = staggerAttr ? this.parseStaggerDelay(staggerAttr) : 0;
-        
-        const timeouts = [];
-        
-        elements.forEach((element, index) => {
-            if (!staggerAttr) {
-                if (animateIn) {
-                    element.classList.add(animationClass);
-                    if (reverseClass) element.classList.remove(reverseClass);
-                } else if (reverseAttr) {
-                    element.classList.remove(animationClass);
-                    if (reverseClass) element.classList.add(reverseClass);
-                }
-                return;
-            }
-            
-            const delay = index * staggerDelay;
-            
-            const timeout = setTimeout(() => {
-                if (animateIn) {
-                    element.classList.add(animationClass);
-                    if (reverseClass) {
-                        element.classList.remove(reverseClass);
-                    }
-                } else if (reverseAttr) {
-                    element.classList.remove(animationClass);
-                    if (reverseClass) {
-                        element.classList.add(reverseClass);
-                    }
-                }
-            }, delay);
-            
-            timeouts.push(timeout);
-        });
-        
-        if (timeouts.length > 0) {
-            this.childrenAnimations.set(parent, timeouts);
-        }
     }
 
     destroy() {
