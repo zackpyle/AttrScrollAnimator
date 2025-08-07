@@ -5,7 +5,7 @@
  *
  * Author: Zack Pyle
  * URL: https://snippetnest.com/snippet/simple-scroll-triggered-animations-with-data-attributes/
- * Version: 1.1.0
+ * Version: 1.2.0
  *
  * === Available Data Attributes ===
  * 
@@ -26,6 +26,17 @@
  *
  * data-scroll-debug="true"
  *   - Optional. If set to true, shows visual lines for threshold and trigger.
+ * 
+ * data-scroll-children="true"
+ *   - Optional. If set to "true", the element's direct children will be animated instead of 
+ *     the element itself. Children will use the animation class as specified in
+ *     data-scroll-animation-class.
+ *   - If set to a class name (e.g. "outline-card"), any descendant elements with that class
+ *     will be animated instead of only direct children.
+ * 
+ * data-scroll-children-stagger="0.1s"
+ *   - Optional. Used with data-scroll-children. Sets a staggered delay between each child's 
+ *     animation (e.g. "0.1s", "100ms"). If not specified, all children animate simultaneously.
  */
 
 class AttrScrollAnimator {
@@ -40,6 +51,7 @@ class AttrScrollAnimator {
         this.observedThresholds = new Map();
         this.hasAnimatedIn = new Set();
         this.debugLines = new Map();
+        this.childrenAnimations = new Map();
 
         this.debugColors = [
             'hsl(160, 100%, 40%)',
@@ -75,6 +87,7 @@ class AttrScrollAnimator {
 
     createDebugLabel(text, color) {
         const label = document.createElement('div');
+        label.className = 'scroll-animation-debug';
         label.textContent = text;
         Object.assign(label.style, {
             position: 'absolute',
@@ -87,12 +100,15 @@ class AttrScrollAnimator {
             border: `1px solid ${color}`,
             borderRadius: '3px'
         });
+        label.style.setProperty('visibility', 'visible', 'important');
+        label.style.setProperty('display', 'block', 'important');
+        label.style.setProperty('opacity', '1', 'important');
         return label;
     }
 
     createLine(labelText, top, color, fixed = false) {
         const line = document.createElement('div');
-        line.className = 'scroll-animation-debug-line';
+        line.className = 'scroll-animation-debug-line scroll-animation-debug';
         Object.assign(line.style, {
             position: fixed ? 'fixed' : 'absolute',
             top: `${top}px`,
@@ -103,6 +119,9 @@ class AttrScrollAnimator {
             zIndex: '9999',
             pointerEvents: 'none'
         });
+        line.style.setProperty('visibility', 'visible', 'important');
+        line.style.setProperty('display', 'block', 'important');
+        line.style.setProperty('opacity', '1', 'important');
 
         line.appendChild(this.createDebugLabel(labelText, color));
         document.body.appendChild(line);
@@ -115,12 +134,10 @@ class AttrScrollAnimator {
             const triggerLinePosition = viewportHeight * position;
             const topMargin = -triggerLinePosition;
             const bottomMargin = -(viewportHeight - triggerLinePosition - 1);
-            const rootMargin = `${topMargin}px 0px ${bottomMargin}px 0px`;
 
-            const observer = new IntersectionObserver(this.handleIntersection.bind(this), {
-                root: null,
-                rootMargin,
-                threshold: 0
+            const observer = new IntersectionObserver(entries => this.handleIntersection(entries), {
+                threshold: 0,
+                rootMargin: `${topMargin}px 0px ${bottomMargin}px 0px`
             });
 
             this.positionObservers.set(position, observer);
@@ -143,20 +160,33 @@ class AttrScrollAnimator {
 
             const hasReverseClass = reverseAttr && reverseAttr !== 'true';
             const reverseClass = hasReverseClass ? reverseAttr : null;
+            const childrenAttr = element.getAttribute('data-scroll-children');
+            const animateChildren = childrenAttr && childrenAttr !== 'false';
 
             if (elementTop <= triggerLine) {
-                element.classList.add(animationClass);
+                if (!animateChildren) {
+                    element.classList.add(animationClass);
 
-                if (reverseClass) {
-                    element.classList.remove(reverseClass);
+                    if (reverseClass) {
+                        element.classList.remove(reverseClass);
+                    }
                 }
 
                 this.hasAnimatedIn.add(element);
+                
+                if (animateChildren) {
+                    this.animateChildren(element, true);
+                }
+                
             } else if (reverseAttr && this.hasAnimatedIn.has(element)) {
-                element.classList.remove(animationClass);
+                if (!animateChildren) {
+                    element.classList.remove(animationClass);
 
-                if (reverseClass) {
-                    element.classList.add(reverseClass);
+                    if (reverseClass) {
+                        element.classList.add(reverseClass);
+                    }
+                } else {
+                    this.animateChildren(element, false);
                 }
             }
         });
@@ -185,7 +215,7 @@ class AttrScrollAnimator {
                     const thresholdLineEl = this.createLine(`Threshold (${position})`, window.innerHeight * position, color, true);
 
                     const triggerLineEl = document.createElement('div');
-                    triggerLineEl.className = 'scroll-animation-trigger-line';
+                    triggerLineEl.className = 'scroll-animation-trigger-line scroll-animation-debug';
                     Object.assign(triggerLineEl.style, {
                         position: 'absolute',
                         top: '0',
@@ -196,6 +226,9 @@ class AttrScrollAnimator {
                         pointerEvents: 'none',
                         zIndex: '9999'
                     });
+                    triggerLineEl.style.setProperty('visibility', 'visible', 'important');
+                    triggerLineEl.style.setProperty('display', 'block', 'important');
+                    triggerLineEl.style.setProperty('opacity', '1', 'important');
 
                     triggerLineEl.appendChild(this.createDebugLabel(`Trigger - (Threshold ${position})`, color));
 
@@ -227,6 +260,85 @@ class AttrScrollAnimator {
         this.init();
     }
 
+    parseStaggerDelay(value) {
+        if (!value) return 0;
+        
+        if (value.endsWith('ms')) {
+            return parseFloat(value);
+        } else if (value.endsWith('s')) {
+            return parseFloat(value) * 1000;
+        }
+        
+        return parseFloat(value);
+    }
+    
+    animateChildren(parent, animateIn) {
+        const animationClass = parent.getAttribute('data-scroll-animation-class');
+        const childrenAttr = parent.getAttribute('data-scroll-children');
+        
+        let elements;
+        
+        if (childrenAttr && childrenAttr !== 'true') {
+            elements = Array.from(parent.querySelectorAll(`.${childrenAttr}`)).filter(el => 
+                !el.classList.contains('scroll-animation-trigger-line') && 
+                !el.classList.contains('scroll-animation-debug')
+            );
+        } else {
+            elements = Array.from(parent.children).filter(child => 
+                !child.classList.contains('scroll-animation-trigger-line') && 
+                !child.classList.contains('scroll-animation-debug')
+            );
+        }
+        
+        if (this.childrenAnimations.has(parent)) {
+            this.childrenAnimations.get(parent).forEach(timeout => clearTimeout(timeout));
+        }
+        
+        const reverseAttr = parent.getAttribute('data-scroll-animation-reverse');
+        const hasReverseClass = reverseAttr && reverseAttr !== 'true';
+        const reverseClass = hasReverseClass ? reverseAttr : null;
+        
+        const staggerAttr = parent.getAttribute('data-scroll-children-stagger');
+        const staggerDelay = staggerAttr ? this.parseStaggerDelay(staggerAttr) : 0;
+        
+        const timeouts = [];
+        
+        elements.forEach((element, index) => {
+            if (!staggerAttr) {
+                if (animateIn) {
+                    element.classList.add(animationClass);
+                    if (reverseClass) element.classList.remove(reverseClass);
+                } else if (reverseAttr) {
+                    element.classList.remove(animationClass);
+                    if (reverseClass) element.classList.add(reverseClass);
+                }
+                return;
+            }
+            
+            const delay = index * staggerDelay;
+            
+            const timeout = setTimeout(() => {
+                if (animateIn) {
+                    element.classList.add(animationClass);
+                    if (reverseClass) {
+                        element.classList.remove(reverseClass);
+                    }
+                } else if (reverseAttr) {
+                    element.classList.remove(animationClass);
+                    if (reverseClass) {
+                        element.classList.add(reverseClass);
+                    }
+                }
+            }, delay);
+            
+            timeouts.push(timeout);
+        });
+        
+        if (timeouts.length > 0) {
+            this.childrenAnimations.set(parent, timeouts);
+        }
+    }
+
     destroy() {
         window.removeEventListener('resize', this.debouncedRefresh);
 
@@ -235,6 +347,11 @@ class AttrScrollAnimator {
         this.observedElements.clear();
         this.observedThresholds.clear();
         this.hasAnimatedIn.clear();
+
+        this.childrenAnimations.forEach(timeouts => {
+            timeouts.forEach(timeout => clearTimeout(timeout));
+        });
+        this.childrenAnimations.clear();
 
         this.debugLines.forEach(lines => lines.forEach(line => line.remove()));
         this.debugLines.clear();
